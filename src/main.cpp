@@ -6,15 +6,22 @@
 Adafruit_BMP085 bmp;
 Adafruit_SHT31 sht3x;
 
+inline float windVaneVoltToDirection(int rawWindVaneVoltage);
+
+constexpr int WIND_VANE_PIN{13};
+constexpr int ADC_RESOLUTION{4095};
+
+constexpr uint8_t SHT3X_ADDR{0x44};
+
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   if (!bmp.begin()) {
     Serial.println("Could not find a valid BMP085 sensor, check wiring!");
     while (1) {
     }
   }
 
-  if (!sht3x.begin(0x44)) {
+  if (!sht3x.begin(SHT3X_ADDR)) {
     Serial.println("Could not find SHT30");
     while (1) {
     }
@@ -22,6 +29,13 @@ void setup() {
 }
 
 void loop() {
+  auto windVaneValRaw = analogRead(WIND_VANE_PIN);
+
+  Serial.print("Wind Vane Raw Value = ");
+  Serial.println(windVaneValRaw);
+  Serial.print("Wind Vane Direction = ");
+  Serial.println(windVaneVoltToDirection(windVaneValRaw));
+
   Serial.print("BMP085 Temperature = ");
   Serial.print(bmp.readTemperature());
   Serial.println(" *C");
@@ -58,4 +72,10 @@ void loop() {
 
   Serial.println();
   delay(500);
+}
+
+inline float windVaneVoltToDirection(int rawWindVaneVoltage) {
+  return (static_cast<float>(rawWindVaneVoltage) /
+          static_cast<float>(ADC_RESOLUTION)) *
+         360.0;
 }
