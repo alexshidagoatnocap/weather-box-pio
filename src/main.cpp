@@ -69,6 +69,13 @@ void loop() {
   Serial.print("SHT30 Humidity = ");
   Serial.print(sht3x.readHumidity());
   Serial.println(" %");
+ 
+  int sensorValue = analogRead(32);
+  float outvoltage = sensorValue * (5.0 / 1023.0);
+  int wind_speed = 6 * outvoltage; //The level of wind speed is proportional to the output voltage.
+  Serial.print("wind speed is ");
+  Serial.print(wind_speed);
+  Serial.println(" level now");
 
   Serial.println();
   delay(500);
