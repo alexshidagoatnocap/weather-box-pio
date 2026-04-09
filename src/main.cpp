@@ -2,6 +2,7 @@
 #include <Adafruit_BMP085.h>
 #include <Adafruit_SHT31.h>
 #include <Arduino.h>
+#include "DFRobot_RainfallSensor.h"
 
 Adafruit_BMP085 bmp;
 Adafruit_SHT31 sht3x;
@@ -12,6 +13,9 @@ constexpr int WIND_VANE_PIN{13};
 constexpr int ADC_RESOLUTION{4095};
 
 constexpr uint8_t SHT3X_ADDR{0x44};
+
+// Set up I2C communication for rain gauge
+DFRobot_RainfallSensor_I2C Sensor(&Wire);
 
 void setup() {
   Serial.begin(115200);
@@ -26,6 +30,9 @@ void setup() {
     while (1) {
     }
   }
+
+  //Set the rain accumulated value, unit: mm
+  Sensor.setRainAccumulatedValue(0.2794);  
 }
 
 void loop() {
@@ -76,6 +83,10 @@ void loop() {
   Serial.print("wind speed is ");
   Serial.print(wind_speed);
   Serial.println(" level now");
+
+  //Get the accumulated rainfall during the sensor working time
+  Serial.print("Rainfall:\t");
+  Serial.println(Sensor.getRainfall());
 
   Serial.println();
   delay(500);
