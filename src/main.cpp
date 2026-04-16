@@ -2,19 +2,79 @@
 #include <Adafruit_BMP085.h>
 #include <Adafruit_SHT31.h>
 #include <Arduino.h>
+#include <ArduinoJson.h>
+#include <Wire.h>
+#include <stdint.h>
 
 Adafruit_BMP085 bmp;
 Adafruit_SHT31 sht3x;
 
-inline float windVaneVoltToDirection(int rawWindVaneVoltage);
-
-constexpr int WIND_VANE_PIN{13};
-constexpr int ADC_RESOLUTION{4095};
+constexpr int32_t WIND_VANE_PIN{13};
+constexpr int32_t WIND_SPEED_PIN{32};
+constexpr int32_t ADC_RESOLUTION{4095};
 
 constexpr uint8_t SHT3X_ADDR{0x44};
 
+constexpr int32_t LORA_RX{16};
+constexpr int32_t LORA_TX{17};
+constexpr int32_t LORA_NETWORK_ID{5};
+constexpr int32_t LORA_ADDRESS{1};
+constexpr int32_t LORA_DESTINATION{2};
+
+HardwareSerial LoRaSerial(2);
+
+inline float cToF(float c) { return (c * 9.0 / 5.0) + 32.0; }
+
+inline float windVaneVoltToDirection(int rawWindVaneVoltage) {
+  return (static_cast<float>(rawWindVaneVoltage) /
+          static_cast<float>(ADC_RESOLUTION)) *
+         360.0;
+}
+
+void sendATCommand(const String &cmd, int waitMs = 500) {
+  LoRaSerial.println(cmd);
+  delay(waitMs);
+
+  while (LoRaSerial.available()) {
+    Serial.write(LoRaSerial.read());
+  }
+}
+
+void setupLoRa() {
+  Serial.println("Configuring LoRa module...");
+
+  sendATCommand("AT", 300);
+  sendATCommand("AT+RESET", 1000);
+  sendATCommand("AT+NETWORKID=" + String(LORA_NETWORK_ID), 500);
+  sendATCommand("AT+ADDRESS=" + String(LORA_ADDRESS), 500);
+  sendATCommand("AT+PARAMETER?", 500);
+
+  Serial.println("LoRa module configured.\n");
+}
+
+void sendLoRaMessage(const String &message) {
+  String command = "AT+SEND=" + String(LORA_DESTINATION) + "," +
+                   String(message.length()) + "," + message;
+
+  LoRaSerial.println(command);
+
+  Serial.println("Sending via LoRa:");
+  Serial.println(message);
+
+  delay(800);
+  while (LoRaSerial.available()) {
+    Serial.write(LoRaSerial.read());
+  }
+  Serial.println();
+}
+
 void setup() {
   Serial.begin(115200);
+
+  LoRaSerial.begin(115200, SERIAL_8N1, LORA_RX, LORA_TX);
+  delay(1000);
+  Serial.println("LoRa UART started");
+
   if (!bmp.begin()) {
     Serial.println("Could not find a valid BMP085 sensor, check wiring!");
     while (1) {
@@ -26,63 +86,71 @@ void setup() {
     while (1) {
     }
   }
+
+  setupLoRa();
 }
+
+static uint32_t packetSequence;
 
 void loop() {
-  auto windVaneValRaw = analogRead(WIND_VANE_PIN);
+  auto windVaneValRaw{analogRead(WIND_VANE_PIN)};
+  float windDirection{windVaneVoltToDirection(windVaneValRaw)};
 
-  Serial.print("Wind Vane Raw Value = ");
-  Serial.println(windVaneValRaw);
-  Serial.print("Wind Vane Direction = ");
-  Serial.println(windVaneVoltToDirection(windVaneValRaw));
+  // Read BMP180/BMP085
+  float bmpTempC = bmp.readTemperature();
+  float bmpTempF = cToF(bmpTempC);
+  float pressurePa = bmp.readPressure();
+  float pressurehPa = pressurePa / 100.0;
 
-  Serial.print("BMP085 Temperature = ");
-  Serial.print(bmp.readTemperature());
-  Serial.println(" *C");
+  // Read SHT30
+  float shtTempC = sht3x.readTemperature();
+  float shtHumidity = sht3x.readHumidity();
 
-  Serial.print("BMP085 Pressure = ");
-  Serial.print(bmp.readPressure());
-  Serial.println(" Pa");
+  // Stop this loop cycle if SHT30 read fails
+  if (isnan(shtTempC) || isnan(shtHumidity)) {
+    Serial.println("Failed to read from SHT30 sensor!");
+    delay(2000);
+    return;
+  }
 
-  // Calculate altitude assuming 'standard' barometric
-  // pressure of 1013.25 millibar = 101325 Pascal
-  Serial.print("BMP085 Altitude = ");
-  Serial.print(bmp.readAltitude());
-  Serial.println(" meters");
+  // Read wind speed
+  auto sensorValue = analogRead(WIND_SPEED_PIN);
 
-  Serial.print("BMP085 Pressure at sealevel (calculated) = ");
-  Serial.print(bmp.readSealevelPressure());
-  Serial.println(" Pa");
+  // ESP32 ADC is typically 12-bit and 3.3V-based
+  float outVoltage = sensorValue * (3.3 / 4095.0);
+  float wind_speed = 6.0 * outVoltage;
 
-  // you can get a more precise measurement of altitude
-  // if you know the current sea level pressure which will
-  // vary with weather and such. If it is 1015 millibars
-  // that is equal to 101500 Pascals.
-  Serial.print("BMP085 Real altitude = ");
-  Serial.print(bmp.readAltitude(101500));
-  Serial.println(" meters");
+  float shtTempF = cToF(shtTempC);
 
-  Serial.print("SHT30 Temperature = ");
-  Serial.print(sht3x.readTemperature());
-  Serial.println(" *C");
+  // Print to Serial
+  Serial.println("------ Sensor Reading ------");
+  Serial.printf("SHT30 Temperature: %.1f째F (%.1f째C)\n", shtTempF, shtTempC);
+  Serial.printf("SHT30 Humidity: %.1f%%\n", shtHumidity);
+  Serial.printf("Pressure: %.1f hPa (%.0f Pa)\n", pressurehPa, pressurePa);
+  Serial.printf("Wind Speed: %.1f m/s\n", wind_speed);
+  Serial.printf("Wind Direction: %.1f째 (raw: %d)\n", windDirection,
+                windVaneValRaw);
+  Serial.printf("BMP Temp: %.1f째F (for reference)\n", bmpTempF);
 
-  Serial.print("SHT30 Humidity = ");
-  Serial.print(sht3x.readHumidity());
-  Serial.println(" %");
- 
-  int sensorValue = analogRead(32);
-  float outvoltage = sensorValue * (5.0 / 1023.0);
-  int wind_speed = 6 * outvoltage; //The level of wind speed is proportional to the output voltage.
-  Serial.print("wind speed is ");
-  Serial.print(wind_speed);
-  Serial.println(" level now");
+  // Build JSON payload
+  StaticJsonDocument<256> doc;
+  doc["sequence"] = packetSequence;
+  doc["temperature_f"] = round(shtTempF * 10) / 10.0;
+  doc["temperature_c"] = round(shtTempC * 10) / 10.0;
+  doc["humidity"] = round(shtHumidity * 10) / 10.0;
+  doc["pressure"] = round(pressurehPa * 10) / 10.0;
+  doc["wind_speed"] = round(wind_speed * 10) / 10.0;
+  doc["wind_direction"] = round(windDirection);
+  doc["rainfall"] = 0.0; // temporarily disabled
 
-  Serial.println();
-  delay(500);
-}
+  String jsonString;
+  serializeJson(doc, jsonString);
 
-inline float windVaneVoltToDirection(int rawWindVaneVoltage) {
-  return (static_cast<float>(rawWindVaneVoltage) /
-          static_cast<float>(ADC_RESOLUTION)) *
-         360.0;
+  // Send over LoRa
+  sendLoRaMessage(jsonString);
+
+  packetSequence++;
+
+  Serial.println("----------------------------\n");
+  delay(5000);
 }
