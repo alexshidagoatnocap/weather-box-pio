@@ -3,6 +3,7 @@
 #include <Adafruit_SHT31.h>
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <DFRobot_RainfallSensor.h>
 #include <Wire.h>
 #include <stdint.h>
 
@@ -21,7 +22,11 @@ constexpr int32_t LORA_NETWORK_ID{5};
 constexpr int32_t LORA_ADDRESS{1};
 constexpr int32_t LORA_DESTINATION{2};
 
+constexpr int32_t RAINFALL_SDA{21};
+constexpr int32_t RAINFALL_SCL{22};
+
 HardwareSerial LoRaSerial(2);
+DFRobot_RainfallSensor_I2C RainSensor(&Wire);
 
 inline float cToF(float c) { return (c * 9.0 / 5.0) + 32.0; }
 
@@ -75,6 +80,12 @@ void setup() {
   delay(1000);
   Serial.println("LoRa UART started");
 
+  Wire.begin(RAINFALL_SDA, RAINFALL_SCL);
+
+  if (!RainSensor.begin()) {
+    Serial.println("Could not find valid rainfall sensor!");
+  }
+
   if (!bmp.begin()) {
     Serial.println("Could not find a valid BMP085 sensor, check wiring!");
     while (1) {
@@ -88,6 +99,7 @@ void setup() {
   }
 
   setupLoRa();
+  RainSensor.setRainAccumulatedValue(0.2794);
 }
 
 static uint32_t packetSequence;
@@ -122,6 +134,8 @@ void loop() {
 
   float shtTempF = cToF(shtTempC);
 
+  auto rainfallValue = RainSensor.getRainfall();
+
   // Print to Serial
   Serial.println("------ Sensor Reading ------");
   Serial.printf("SHT30 Temperature: %.1f째F (%.1f째C)\n", shtTempF, shtTempC);
@@ -131,6 +145,7 @@ void loop() {
   Serial.printf("Wind Direction: %.1f째 (raw: %d)\n", windDirection,
                 windVaneValRaw);
   Serial.printf("BMP Temp: %.1f째F (for reference)\n", bmpTempF);
+  Serial.printf("Rainfall: %0.1f\n", rainfallValue);
 
   // Build JSON payload
   StaticJsonDocument<256> doc;
@@ -141,7 +156,7 @@ void loop() {
   doc["pressure"] = round(pressurehPa * 10) / 10.0;
   doc["wind_speed"] = round(wind_speed * 10) / 10.0;
   doc["wind_direction"] = round(windDirection);
-  doc["rainfall"] = 0.0; // temporarily disabled
+  doc["rainfall"] = round(rainfallValue * 10) / 10.0;
 
   String jsonString;
   serializeJson(doc, jsonString);
