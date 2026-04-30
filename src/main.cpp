@@ -88,14 +88,10 @@ void setup() {
 
   if (!bmp.begin()) {
     Serial.println("Could not find a valid BMP085 sensor, check wiring!");
-    while (1) {
-    }
   }
 
   if (!sht3x.begin(SHT3X_ADDR)) {
     Serial.println("Could not find SHT30");
-    while (1) {
-    }
   }
 
   setupLoRa();
@@ -138,13 +134,13 @@ void loop() {
 
   // Print to Serial
   Serial.println("------ Sensor Reading ------");
-  Serial.printf("SHT30 Temperature: %.1f째F (%.1f째C)\n", shtTempF, shtTempC);
+  Serial.printf("SHT30 Temperature: %.1f F (%.1f C)\n", shtTempF, shtTempC);
   Serial.printf("SHT30 Humidity: %.1f%%\n", shtHumidity);
   Serial.printf("Pressure: %.1f hPa (%.0f Pa)\n", pressurehPa, pressurePa);
   Serial.printf("Wind Speed: %.1f m/s\n", wind_speed);
-  Serial.printf("Wind Direction: %.1f째 (raw: %d)\n", windDirection,
+  Serial.printf("Wind Direction: %.1f  (raw: %d)\n", windDirection,
                 windVaneValRaw);
-  Serial.printf("BMP Temp: %.1f째F (for reference)\n", bmpTempF);
+  Serial.printf("BMP Temp: %.1f F (for reference)\n", bmpTempF);
   Serial.printf("Rainfall: %0.1f\n", rainfallValue);
 
   // Build JSON payload
